@@ -5,7 +5,7 @@ defined('MOODLE_INTERNAL') || die();
 require_once(__DIR__ . '/classes/local/azure_blob_storage.php');
 
 use assignsubmission_externalstorage\local\azure_blob_storage;
-
+use assignsubmission_externalstorage\local\turnitin_bridge;
 /**
  * Azure Blob Storage assignment submission plugin.
  */
@@ -40,82 +40,109 @@ class assign_submission_externalstorage extends assign_submission_plugin {
     /**
      * Add upload element to assignment form.
      */
-    public function get_form_elements(
-        $submission,
-        MoodleQuickForm $mform,
-        stdClass $data
-    ) {
-        global $CFG;
+    
+public function get_form_elements(
+    $submission,
+    MoodleQuickForm $mform,
+    stdClass $data
+) {
+    global $CFG;
 
-        $mform->updateAttributes([
-            'enctype' => 'multipart/form-data'
-        ]);
+    $mform->updateAttributes([
+        'enctype' => 'multipart/form-data'
+    ]);
 
-        $record = false;
+    $record = false;
 
-        if ($submission && !empty($submission->id)) {
-            $record = $this->get_file_submission(
-                (int)$submission->id
-            );
-        }
-
-        $pluginmaxbytes = (int)get_config(
-            'assignsubmission_externalstorage',
-            'maxbytes'
+    if ($submission && !empty($submission->id)) {
+        $record = $this->get_file_submission(
+            (int)$submission->id
         );
-
-        $course = $this->assignment->get_course();
-
-        $moodlemaxbytes = get_max_upload_file_size(
-            $CFG->maxbytes,
-            $course->maxbytes
-        );
-
-        if ($pluginmaxbytes > 0 && $moodlemaxbytes > 0) {
-            $maxbytes = min($pluginmaxbytes, $moodlemaxbytes);
-        } else if ($pluginmaxbytes > 0) {
-            $maxbytes = $pluginmaxbytes;
-        } else {
-            $maxbytes = $moodlemaxbytes;
-        }
-
-        $mform->addElement(
-            'file',
-            self::UPLOAD_ELEMENT,
-            get_string(
-                'uploadfile',
-                'assignsubmission_externalstorage'
-            )
-        );
-
-        $mform->setMaxFileSize($maxbytes);
-$mform->setType('MAX_FILE_SIZE', PARAM_INT);
-        if ($record) {
-            $mform->addElement(
-                'static',
-                'externalstorage_current',
-                get_string(
-                    'currentfile',
-                    'assignsubmission_externalstorage'
-                ),
-                s($record->filename) . ' (' .
-                    display_size($record->filesize) . ')'
-            );
-        }
-
-        $mform->addElement(
-            'hidden',
-            'externalstorage_existing',
-            $record ? 1 : 0
-        );
-
-        $mform->setType(
-            'externalstorage_existing',
-            PARAM_INT
-        );
-
-        return true;
     }
+
+    $pluginmaxbytes = (int)get_config(
+        'assignsubmission_externalstorage',
+        'maxbytes'
+    );
+
+    $course = $this->assignment->get_course();
+
+    $moodlemaxbytes = get_max_upload_file_size(
+        $CFG->maxbytes,
+        $course->maxbytes
+    );
+
+    if ($pluginmaxbytes > 0 && $moodlemaxbytes > 0) {
+        $maxbytes = min($pluginmaxbytes, $moodlemaxbytes);
+    } else if ($pluginmaxbytes > 0) {
+        $maxbytes = $pluginmaxbytes;
+    } else {
+        $maxbytes = $moodlemaxbytes;
+    }
+    // Moodle native file picker.
+    $mform->addElement(
+        'file',
+        self::UPLOAD_ELEMENT,
+        get_string(
+            'uploadfile',
+            'assignsubmission_externalstorage'
+        ),
+        ['class' => 'externalstorage-file-input']
+    );
+
+    $mform->setMaxFileSize($maxbytes);
+    $mform->setType('MAX_FILE_SIZE', PARAM_INT);
+
+
+
+    // Display existing submission.
+    if ($record) {
+
+        $filedetails = html_writer::div(
+            html_writer::tag(
+                'strong',
+                s($record->filename)
+            ) .
+            html_writer::tag(
+                'span',
+                display_size($record->filesize),
+                ['class' => 'externalstorage-file-size']
+            ),
+            'externalstorage-current-file-details'
+        );
+
+        $currentfile = html_writer::div(
+            html_writer::div(
+                'Existing submission',
+                'externalstorage-current-file-heading'
+            ) .
+            $filedetails,
+            'externalstorage-current-file'
+        );
+
+        $mform->addElement(
+            'static',
+            'externalstorage_current',
+            '',
+            $currentfile
+        );
+    }
+
+    // Preserve existing submission state.
+    $mform->addElement(
+        'hidden',
+        'externalstorage_existing',
+        $record ? 1 : 0
+    );
+
+    $mform->setType(
+        'externalstorage_existing',
+        PARAM_INT
+    );
+
+    return true;
+}
+
 
     /**
      * Check whether a file upload was attempted.
@@ -388,31 +415,54 @@ $mform->setType('MAX_FILE_SIZE', PARAM_INT);
         }
 
         // Upload to Azure.
-        try {
-            azure_blob_storage::upload(
-                $upload['tmp_name'],
-                $storagekey
-            );
-        } catch (\Throwable $e) {
+            // Create Moodle secondary copy for Turnitin.
+           try {
 
-    debugging(
-        'Azure upload failed: ' . get_class($e) .
-        ': ' . $e->getMessage() .
-        ' in ' . $e->getFile() .
-        ' on line ' . $e->getLine() .
-        PHP_EOL . $e->getTraceAsString(),
-        DEBUG_DEVELOPER
-    );
+               $pathnamehash = turnitin_bridge::submit(
+                   $this->assignment,
+                   $submission,
+                   $upload['tmp_name'],
+                   $filename
+               );
 
-    $this->set_error(
-        get_string(
-            'uploadfailed',
-            'assignsubmission_externalstorage'
-        )
-    );
+               // Update Turnitin tracking information.
+               $DB->set_field(
+                   'assignsubmission_externalstorage',
+                   'turnitinpathnamehash',
+                   $pathnamehash,
+                   ['submission' => $submissionid]
+               );
 
-    return false;
-}
+               $DB->set_field(
+                   'assignsubmission_externalstorage',
+                   'turnitinstatus',
+                   'queued',
+                   ['submission' => $submissionid]
+               );
+
+               $DB->set_field(
+                   'assignsubmission_externalstorage',
+                   'turnitinlastchecked',
+                   time(),
+                   ['submission' => $submissionid]
+               );
+
+           } catch (\Throwable $e) {
+
+               debugging(
+                   'Turnitin integration failed: ' . $e->getMessage(),
+                   DEBUG_DEVELOPER
+               );
+
+               $this->set_error(
+                   get_string(
+                       'uploadfailed',
+                       'assignsubmission_externalstorage'
+                   )
+               );
+
+               return false;
+           }
 
         // Prepare database record.
         $now = time();
