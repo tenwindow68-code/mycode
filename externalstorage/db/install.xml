@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<XMLDB PATH="mod/assign/submission/externalstorage/db"
+       VERSION="20261102"
+       COMMENT="XMLDB file for external storage assignment submission plugin">
+    <TABLES>
+        <TABLE NAME="assignsubmission_externalstorage"
+               COMMENT="Metadata for assignment files stored outside Moodledata">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+                <FIELD NAME="assignment" TYPE="int" LENGTH="10" NOTNULL="true"/>
+                <FIELD NAME="submission" TYPE="int" LENGTH="10" NOTNULL="true"/>
+                <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+                <FIELD NAME="filename" TYPE="char" LENGTH="255" NOTNULL="true"/>
+                <FIELD NAME="storagekey" TYPE="char" LENGTH="512" NOTNULL="true"/>
+                <FIELD NAME="filesize" TYPE="int" LENGTH="20" NOTNULL="true" DEFAULT="0"/>
+                <FIELD NAME="mimetype" TYPE="char" LENGTH="255" NOTNULL="true" DEFAULT="application/octet-stream"/>
+                <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true"/>
+                <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+            </KEYS>
+            <INDEXES>
+                <INDEX NAME="submission_uix" UNIQUE="true" FIELDS="submission"/>
+                <INDEX NAME="assignment_ix" UNIQUE="false" FIELDS="assignment"/>
+            </INDEXES>
+        </TABLE>
+    </TABLES>
+</XMLDB>
