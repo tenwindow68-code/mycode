@@ -420,6 +420,8 @@ public function get_form_elements(
                 $upload['tmp_name'],
                 $storagekey
             );
+            // Turnitin integration will be handled separately.
+// Do not call an undefined method here.
         } catch (\Throwable $e) {
 
     debugging(
